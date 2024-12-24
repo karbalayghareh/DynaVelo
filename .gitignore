@@ -1,0 +1,12 @@
+# Ignore Python bytecode cache
+__pycache__/
+
+# Ignore Visual Studio Code settings folder
+.vscode/
+
+# Ignore PDF files
+*.pdf
+
+# Ignore PNG images
+*.png
+
