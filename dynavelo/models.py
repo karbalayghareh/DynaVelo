@@ -32,7 +32,9 @@ class MultiomeDataset(Dataset):
     adata_atac: an anndata object containing TF motif accessibility.
     """
 
-    def __init__(self, adata_rna, adata_atac):
+    def __init__(self, adata_rna, adata_atac, use_weights=True):
+
+        self.use_weights = use_weights
 
         # Process RNA data
         self.x_rna = self._to_dense(adata_rna.X)
@@ -50,18 +52,15 @@ class MultiomeDataset(Dataset):
         # Create a mask for velocity genes
         self.velocity_genes_mask = (~np.isnan(adata_rna.layers['velocity'])).astype(np.float32)
 
-        # Map cell types to indices
-        self.celltype_indices = {celltype: np.where(self.rna_obs['final.celltype'] == celltype)[0]
-                                 for celltype in self.rna_obs['final.celltype'].unique()}
-
         # Calculate weights for cell types based on their frequencies
-        self.weights_dict = self._calculate_weights(adata_rna.obs['final.celltype'])
+        if use_weights:
+            self.weights_dict = self._calculate_weights(adata_rna.obs['final.celltype'])
 
     def __len__(self):
         """
         Returns the total number of samples in the dataset.
         """
-        return self.X_rna.shape[0]
+        return self.x_rna.shape[0]
 
     def __getitem__(self, idx):
         """
@@ -71,8 +70,11 @@ class MultiomeDataset(Dataset):
         y = torch.tensor(self.x_atac[idx, :], dtype=torch.float32)
         vx = torch.tensor(self.vx[idx, :] * self.velocity_genes_mask[idx, :], dtype=torch.float32)
         v_mask = torch.tensor(self.velocity_genes_mask[idx, :], dtype=torch.float32)
-        celltype = self.rna_obs['final.celltype'][idx]
-        weight = torch.tensor(self.weights_dict[celltype], dtype=torch.float32)
+        if self.use_weights:
+            celltype = self.rna_obs['final.celltype'][idx]
+            weight = torch.tensor(self.weights_dict[celltype], dtype=torch.float32)
+        else:
+            weight = torch.tensor(1., dtype=torch.float32)
 
         return x, y, vx, v_mask, weight
 
@@ -300,6 +302,13 @@ class DynaVelo(nn.Module):
         self.sample_name = sample_name
         self.logger = Logger(["Epoch", "loss_train", "loss_test", "nll_x", "nll_y",  
                               "loss_vel", "loss_con", "kl_z0", "kl_t"], verbose=True)
+        
+        self.train_dir = f'../checkpoints/{self.dataset_name}/{self.sample_name}/'
+        if not os.path.exists(self.train_dir):
+            os.makedirs(self.train_dir)
+
+        self.model_suffix = f'{self.dataset_name}_{self.sample_name}_DynaVelo_num_hidden_{self.num_hidden}_zxdim_{self.zx_dim}_zydim_{self.zy_dim}_k_z0_{str(self.k_z0)}_k_t_{str(self.k_t)}_k_velocity_{str(self.k_velocity)}_k_consistency_{str(self.k_consistency)}_seed_{self.seed}'
+        self.ckpt_path = self.train_dir+self.model_suffix+'.pth'
 
         mu_pz0 = torch.tensor(mu_pz0).to(device)
         sigma_pz0 = torch.tensor(sigma_pz0).to(device)
@@ -835,13 +844,6 @@ class DynaVelo(nn.Module):
         max_epoch: maximum number of epochs to train the model
         """
 
-        train_dir = f'../checkpoints/{self.dataset_name}/{self.sample_name}/'
-        if not os.path.exists(train_dir):
-            os.makedirs(train_dir)
-
-        model_suffix = f'{self.dataset_name}_{self.sample_name}_DynaVelo_num_hidden_{self.num_hidden}_zxdim_{self.zx_dim}_zydim_{self.zy_dim}_k_z0_{str(self.k_z0)}_k_t_{str(self.k_t)}_k_velocity_{str(self.k_velocity)}_k_consistency_{str(self.k_consistency)}_seed_{self.seed}'
-        ckpt_path = train_dir+model_suffix+'.pth'
-
         lr_scheduler = LRScheduler(optimizer, patience=5, factor=0.5)
         early_stopping = EarlyStopping(patience=10)
         self.logger.start()
@@ -854,7 +856,7 @@ class DynaVelo(nn.Module):
             loss_test, loss_nll_x_test, loss_nll_y_test, loss_velocity_test, loss_velocity_consistency_test, loss_kl_z0_test, loss_kl_t_test = self.test_step(dataloader_test)
 
             self.logger.add([epoch, loss_train, loss_test, loss_nll_x_test, loss_nll_y_test, loss_velocity_test, loss_velocity_consistency_test, loss_kl_z0_test, loss_kl_t_test])
-            self.logger.save(f"../log/{model_suffix}.log")
+            self.logger.save(f"../log/{self.model_suffix}.log")
 
             # Early stopping
             lr_scheduler(loss_test)
@@ -863,9 +865,19 @@ class DynaVelo(nn.Module):
                 torch.save({
                         'model_state_dict': self.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict()
-                    }, ckpt_path)
+                    }, self.ckpt_path)
             if early_stopping.early_stop:
                 break
+
+
+    def load(self, optimizer):
+        if os.path.exists(self.ckpt_path):
+            checkpoint = torch.load(self.ckpt_path)
+            self.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            print('Loaded ckpt from {}'.format(self.ckpt_path))
+        else:
+            print('Model does not exist.')
 
 
     def evaluate(self, adata_rna, adata_atac, dataloader, n_samples=100):
@@ -917,7 +929,8 @@ class DynaVelo(nn.Module):
                 print('n: ', n)
                 for idx_batch, (x, y, vx, v_mask, w) in enumerate(dataloader):
                     x, y, vx = x.to(device), y.to(device), vx.to(device)
-                    z0_mean_, z_, vz_, x_pred_, y_pred_, vx_pred_, vy_pred_, latent_time_, latent_time_std_ = self(x, y)
+                    #z0_mean_, z_, vz_, x_pred_, y_pred_, vx_pred_, vy_pred_, latent_time_, latent_time_std_ = self(x, y)
+                    x_pred_, y_pred_, vx_pred_, vy_pred_, z0_mean_, z_, vz_, latent_time_, latent_time_std_ = self(x, y)
 
                     if n == 0:
                         x_obs[idx_batch*batch_size:idx_batch*batch_size+batch_size, :] = x.detach().cpu().numpy()
@@ -1032,7 +1045,7 @@ class DynaVelo(nn.Module):
         adata_rna_pred: updated adata_rna containing the calculated Jacobians
         """
 
-        batch_size = self.batch_size
+        batch_size = dataloader.batch_size
         device = self.device
         n_cells = adata_rna_pred.shape[0]
         n_genes = adata_rna_pred.shape[1]
@@ -1102,7 +1115,7 @@ class DynaVelo(nn.Module):
         adata_rna_pred: updated adata_rna containing the post-perturbation delta velocities 
         """
 
-        batch_size = self.batch_size
+        batch_size = dataloader.batch_size
         zx_dim = self.zx_dim
         zy_dim = self.zy_dim
         z_dim = zx_dim + zy_dim
@@ -1154,6 +1167,7 @@ class DynaVelo(nn.Module):
                     if g in TFs:
                         y[:,tf_idx] = torch.tensor(y_tf_min, dtype=torch.float32)
 
+                    x, y = x.to(device), y.to(device)
                     x_pred_, y_pred_, vx_pred_, vy_pred_, z0_mean_, z_, vz_, latent_time_, latent_time_std_ = self(x, y)
 
                     latent_time_mean_perturbed[idx_batch*batch_size:idx_batch*batch_size+batch_size] = latent_time_.detach().cpu().numpy()
