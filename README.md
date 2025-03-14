@@ -81,7 +81,7 @@ Since the Jacobians are 3D dense tensors, they take a lot of memory, so we choos
 ```python
 # Jacobians
 model.mode = 'evaluation-fixed'
-adata_rna_pred = model.calculate_jacobians(model, adata_rna_pred, adata_atac_pred, dataloader, genes_of_interest, epsilon = 1e-4)
+adata_rna_pred = model.calculate_jacobians(adata_rna_pred, adata_atac_pred, dataloader, genes_of_interest, epsilon = 1e-4)
 ```
 
 #### In-silico gene perturbation
@@ -90,7 +90,7 @@ One of the useful applications of DynaVelo is to perform in-silico gene perturba
 ```python
 # In-silico gene perturbation
 model.mode = 'evaluation-fixed'
-adata_rna_pred = model.predict_perturbation(model, adata_rna_pred, adata_atac_pred, dataloader, perturbed_genes)
+adata_rna_pred = model.predict_perturbation(adata_rna_pred, adata_atac_pred, dataloader, perturbed_genes)
 ```
 
 
