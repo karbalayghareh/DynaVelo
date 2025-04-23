@@ -54,7 +54,7 @@ class MultiomeDataset(Dataset):
 
         # Calculate weights for cell types based on their frequencies
         if use_weights:
-            self.weights_dict = self._calculate_weights(adata_rna.obs['final.celltype'])
+            self.weights_dict = self._calculate_weights(adata_rna.obs['celltype'])
 
     def __len__(self):
         """
@@ -71,7 +71,7 @@ class MultiomeDataset(Dataset):
         vx = torch.tensor(self.vx[idx, :] * self.velocity_genes_mask[idx, :], dtype=torch.float32)
         v_mask = torch.tensor(self.velocity_genes_mask[idx, :], dtype=torch.float32)
         if self.use_weights:
-            celltype = self.rna_obs['final.celltype'][idx]
+            celltype = self.rna_obs['celltype'][idx]
             weight = torch.tensor(self.weights_dict[celltype], dtype=torch.float32)
         else:
             weight = torch.tensor(1., dtype=torch.float32)

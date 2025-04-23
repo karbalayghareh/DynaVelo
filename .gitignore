@@ -1,8 +1,10 @@
 # Ignore Python bytecode cache
 __pycache__/
 
-# Ignore Visual Studio Code settings folder
+# Ignore these folders
 .vscode/
+cache/
+figures/
 
 # Ignore PDF files
 *.pdf
@@ -10,3 +12,10 @@ __pycache__/
 # Ignore PNG images
 *.png
 
+# Ignore these files
+Fig2_Ben.ipynb
+Fig2.ipynb
+Fig3.ipynb
+Fig4.ipynb
+Fig5.ipynb
+Fig6.ipynb
