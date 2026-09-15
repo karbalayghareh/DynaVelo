@@ -1,4 +1,4 @@
-# DynaVelo
+# DynaVelo [![DOI](https://zenodo.org/badge/883197759.svg)](https://doi.org/10.5281/zenodo.22760121)
 A latent neural ODE model to learn multiomic velocities of cells, infer dynamic gene regulations, and do in-silico perturbations to predict velocity changes.
 
 ### Environment Setup
